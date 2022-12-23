@@ -1,12 +1,14 @@
-use eframe::{NativeOptions, App, egui::{CentralPanel, Direction, Layout}};
-use egui_extras::{TableBuilder, Column};
-use egui::{Vec2,SidePanel};
 use eframe::run_native;
+use eframe::{
+    egui::{CentralPanel, Direction, Layout},
+    App, NativeOptions,
+};
+use egui::{SidePanel, Vec2};
+use egui_extras::{Column, TableBuilder};
 use native_dialog::{MessageDialog, MessageType};
-use std::fmt;
-use prettytable::{row, Table};
+use sqlite::Error as SqliteError;
 use sqlite::State;
-use sqlite::{Error as SqliteError};
+use std::fmt;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 enum Genero {
@@ -22,13 +24,13 @@ impl fmt::Display for Genero {
 }
 
 struct Test {
-    test_data: Vec<[String; 6]>,
+    vector: Vec<[String; 6]>,
     nombre: String,
     apellidos: String,
     genero: Genero,
     nacionalidad: String,
     fecha: String,
-    _connection: sqlite::Connection,
+    connection: sqlite::Connection,
     is_table_created: bool,
     id: i32,
     contador: i32,
@@ -36,16 +38,26 @@ struct Test {
 
 impl Default for Test {
     fn default() -> Self {
-        let test_data = Vec::with_capacity(1000);
-        Self { test_data, nombre: "".to_string(), apellidos: "".to_string(), genero: Genero::Masculino, nacionalidad: "".to_string(), fecha: "".to_string(), _connection: get_connection(), is_table_created: false, id: 1, contador: 0 }
+        let vector = Vec::with_capacity(1000);
+        Self {
+            vector,
+            nombre: "".to_string(),
+            apellidos: "".to_string(),
+            genero: Genero::Masculino,
+            nacionalidad: "".to_string(),
+            fecha: "".to_string(),
+            connection: get_connection(),
+            is_table_created: false,
+            id: 1,
+            contador: 0,
+        }
     }
 }
 
 impl App for Test {
-    fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
-
+    fn update(&mut self, ctx: &eframe::egui::Context, frame: &mut eframe::Frame) {
         if self.is_table_created.eq(&false) {
-            create_table(&self._connection);
+            create_table(&self.connection);
             self.is_table_created = true;
         }
 
@@ -53,7 +65,7 @@ impl App for Test {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("Menú", |ui| {
                     if ui.button("Cerrar").clicked() {
-                        _frame.close();
+                        frame.close();
                     }
                 });
                 ui.menu_button("Tema", |ui| {
@@ -86,92 +98,55 @@ impl App for Test {
                 ui.text_edit_singleline(&mut self.fecha);
                 ui.horizontal(|ui| {
                     if ui.button("Alta").clicked() {
-                        if self.nombre.is_empty()
-                            || self.apellidos.is_empty()
-                            || self.nacionalidad.is_empty()
-                            || self.fecha.is_empty()
-                        {
-                            let message = format!("Algunos campos están vacíos");
-                            MessageDialog::new()
-                                .set_type(MessageType::Error)
-                                .set_title("Error")
-                                .set_text(&*message)
-                                .show_alert()
-                                .unwrap();
-                        } else if self.nacionalidad.len() != 3 {
-                            let message = format!("Nacionalidad tiene que tener 3 caracteres");
-                            MessageDialog::new()
-                                .set_type(MessageType::Error)
-                                .set_title("Error")
-                                .set_text(&*message)
-                                .show_alert()
-                                .unwrap();
-                        } else if !self.fecha.contains("-") {
-                            let message = format!("Nacimiento tiene que tener el formato dd-mm-yyyy");
-                            MessageDialog::new()
-                                .set_type(MessageType::Error)
-                                .set_title("Error")
-                                .set_text(&*message)
-                                .show_alert()
-                                .unwrap();
-                        } else {
-                            let _usuario = Usuario {
-                                _id: self.id.to_owned(),
-                                _apellidos: self.apellidos.to_owned(),
-                                _nombre: self.nombre.to_owned(),
-                                _sexo: self.genero.to_string().to_owned(),
-                                _nacionalidad: self.nacionalidad.to_owned(),
-                                _nacimiento: self.fecha.to_owned(),
-                            };
-                            _usuario.insert_into_db(&self._connection).unwrap();
-                            self.contador = count_id(&self._connection);
-                            let vector_usuario = select_user(&self._connection);
-                            self.test_data.clear();
-                            for usuario in vector_usuario {
-                                self.test_data.push([
-                                    usuario._id.to_string(),
-                                    usuario._apellidos,
-                                    usuario._nombre,
-                                    usuario._sexo,
-                                    usuario._nacionalidad,
-                                    usuario._nacimiento,
-                                ]);
-                            }
+                        if validation(
+                            &self.nombre,
+                            &self.apellidos,
+                            &self.nacionalidad,
+                            &self.fecha,
+                        ) {
+                            let _usuario = crear_usuario(
+                                self.id,
+                                self.apellidos.clone(),
+                                self.nombre.clone(),
+                                self.genero.to_string().clone(),
+                                self.nacionalidad.clone(),
+                                self.fecha.clone(),
+                            );
+                            _usuario.insert_into_db(&self.connection).unwrap();
+                            self.contador = count_id(&self.connection);
+                            self.vector = actualizar_tabla(self.vector.clone(), &self.connection);
                         }
                     }
                     ui.label("");
                     if ui.button("Modificar").clicked() {
-                        let text = "¿Quiéres modificar el usuario con id ".to_owned()
-                            + &self.id.to_string()
-                            + "?";
-                        let yes = MessageDialog::new()
-                            .set_type(MessageType::Info)
-                            .set_title("Modificar usuario")
-                            .set_text(&text)
-                            .show_confirm()
-                            .unwrap();
-                        if yes {
-                            let _usuario = Usuario {
-                                _id: self.id.to_owned(),
-                                _apellidos: self.apellidos.to_owned(),
-                                _nombre: self.nombre.to_owned(),
-                                _sexo: self.genero.to_string().to_owned(),
-                                _nacionalidad: self.nacionalidad.to_owned(),
-                                _nacimiento: self.fecha.to_owned(),
-                            };
-                            _usuario.update_db(&self._connection).unwrap();
-                            self.contador = count_id(&self._connection);
-                            let vector_usuario = select_user(&self._connection);
-                            self.test_data.clear();
-                            for usuario in vector_usuario {
-                                self.test_data.push([
-                                    usuario._id.to_string(),
-                                    usuario._apellidos,
-                                    usuario._nombre,
-                                    usuario._sexo,
-                                    usuario._nacionalidad,
-                                    usuario._nacimiento,
-                                ]);
+                        if validation(
+                            &self.nombre,
+                            &self.apellidos,
+                            &self.nacionalidad,
+                            &self.fecha,
+                        ) {
+                            let text = "¿Quiéres modificar el usuario con id ".to_owned()
+                                + &self.id.to_string()
+                                + "?";
+                            let yes = MessageDialog::new()
+                                .set_type(MessageType::Info)
+                                .set_title("Modificar usuario")
+                                .set_text(&text)
+                                .show_confirm()
+                                .unwrap();
+                            if yes {
+                                let _usuario = crear_usuario(
+                                    self.id,
+                                    self.apellidos.clone(),
+                                    self.nombre.clone(),
+                                    self.genero.to_string().clone(),
+                                    self.nacionalidad.clone(),
+                                    self.fecha.clone(),
+                                );
+                                _usuario.update_db(&self.connection).unwrap();
+                                self.contador = count_id(&self.connection);
+                                self.vector =
+                                    actualizar_tabla(self.vector.clone(), &self.connection);
                             }
                         }
                     }
@@ -187,32 +162,18 @@ impl App for Test {
                             .show_confirm()
                             .unwrap();
                         if yes {
-                            let _usuario = Usuario {
-                                _id: self.id.to_owned(),
-                                _apellidos: self.apellidos.to_owned(),
-                                _nombre: self.nombre.to_owned(),
-                                _sexo: self.genero.to_string().to_owned(),
-                                _nacionalidad: self.nacionalidad.to_owned(),
-                                _nacimiento: self.fecha.to_owned(),
-                            };
-                            _usuario.delete_from_db(&self._connection).unwrap();
-                            // let id_vector = self.id-1;
-                            // self.test_data.remove(id_vector.try_into().unwrap());
-                            // self.contador = count_id(&self._connection);
+                            let _usuario = crear_usuario(
+                                self.id,
+                                self.apellidos.clone(),
+                                self.nombre.clone(),
+                                self.genero.to_string().clone(),
+                                self.nacionalidad.clone(),
+                                self.fecha.clone(),
+                            );
+                            _usuario.delete_from_db(&self.connection).unwrap();
                             self.id -= 1;
-                            self.contador = count_id(&self._connection);
-                            let vector_usuario = select_user(&self._connection);
-                            self.test_data.clear();
-                            for usuario in vector_usuario {
-                                self.test_data.push([
-                                    usuario._id.to_string(),
-                                    usuario._apellidos,
-                                    usuario._nombre,
-                                    usuario._sexo,
-                                    usuario._nacionalidad,
-                                    usuario._nacimiento,
-                                ]);
-                            }
+                            self.contador = count_id(&self.connection);
+                            self.vector = actualizar_tabla(self.vector.clone(), &self.connection);
                         }
                     }
                     ui.label("");
@@ -242,39 +203,50 @@ impl App for Test {
                 .cell_layout(Layout::centered_and_justified(Direction::LeftToRight))
                 .resizable(false)
                 .header(20.0, |mut header| {
-                    for text in ["Id", "Apellidos", "Nombre", "Sexo", "Nacionalidad", "Fecha Nacimiento"] {
+                    for text in [
+                        "Id",
+                        "Apellidos",
+                        "Nombre",
+                        "Sexo",
+                        "Nacionalidad",
+                        "Fecha Nacimiento",
+                    ] {
                         header.col(|ui| {
                             ui.heading(text);
                         });
                     }
                 })
                 .body(|body| {
-                    body.rows(25.0, self.contador.try_into().unwrap(), |row_idx, mut row| {
-                        row.col(|ui| {
-                            ui.label(&self.test_data[row_idx][0]);
-                        });
-                        row.col(|ui| {
-                            ui.label(&self.test_data[row_idx][1]);
-                        });
-                        row.col(|ui| {
-                            ui.label(&self.test_data[row_idx][2]);
-                        });
-                        row.col(|ui| {
-                            ui.label(&self.test_data[row_idx][3]);
-                        });
-                        row.col(|ui| {
-                            ui.label(&self.test_data[row_idx][4]);
-                        });
-                        row.col(|ui| {
-                            ui.label(&self.test_data[row_idx][5]);
-                        });
-                    })
+                    body.rows(
+                        25.0,
+                        self.contador.try_into().unwrap(),
+                        |row_idx, mut row| {
+                            row.col(|ui| {
+                                ui.label(&self.vector[row_idx][0]);
+                            });
+                            row.col(|ui| {
+                                ui.label(&self.vector[row_idx][1]);
+                            });
+                            row.col(|ui| {
+                                ui.label(&self.vector[row_idx][2]);
+                            });
+                            row.col(|ui| {
+                                ui.label(&self.vector[row_idx][3]);
+                            });
+                            row.col(|ui| {
+                                ui.label(&self.vector[row_idx][4]);
+                            });
+                            row.col(|ui| {
+                                ui.label(&self.vector[row_idx][5]);
+                            });
+                        },
+                    )
                 })
         });
     }
 }
 
-fn main(){
+fn main() {
     let options = NativeOptions {
         initial_window_size: Some(Vec2::new(1170., 535.)),
         min_window_size: Some(Vec2::new(1170., 535.)),
@@ -282,55 +254,49 @@ fn main(){
         ..Default::default()
     };
     run_native(
-        "Test",
+        "Cyberdyne",
         options,
-        Box::new(|_| Box::new(Test::default()))
+        Box::new(|_| Box::new(Test::default())),
     );
 }
 
 #[derive(Debug)]
 pub struct Usuario {
-    pub(crate) _id: i32,
-    pub(crate) _apellidos: String,
-    pub(crate) _nombre: String,
-    pub(crate) _sexo: String,
-    pub(crate) _nacionalidad: String,
-    pub(crate) _nacimiento: String,
+    pub(crate) id: i32,
+    pub(crate) apellidos: String,
+    pub(crate) nombre: String,
+    pub(crate) sexo: String,
+    pub(crate) nacionalidad: String,
+    pub(crate) nacimiento: String,
 }
 
 impl Usuario {
     pub fn insert_into_db(&self, conn: &sqlite::Connection) -> Result<(), SqliteError> {
-        // Conectarse a la base de datos y preparar la instrucción SQL para insertar un usuario
-        //let conn = sqlite::open(":memory:").unwrap();
         let mut stmt = conn.prepare("INSERT INTO usuarios (apellidos, nombre, sexo, nacionalidad, f_nacimiento) VALUES (?, ?, ?, ?, ?)").unwrap();
-        stmt.bind((1, self._apellidos.as_str())).unwrap();
-        stmt.bind((2, self._nombre.as_str())).unwrap();
-        stmt.bind((3, self._sexo.as_str())).unwrap();
-        stmt.bind((4, self._nacionalidad.as_str())).unwrap();
-        stmt.bind((5, self._nacimiento.as_str())).unwrap();
+        stmt.bind((1, self.apellidos.as_str())).unwrap();
+        stmt.bind((2, self.nombre.as_str())).unwrap();
+        stmt.bind((3, self.sexo.as_str())).unwrap();
+        stmt.bind((4, self.nacionalidad.as_str())).unwrap();
+        stmt.bind((5, self.nacimiento.as_str())).unwrap();
         stmt.next().unwrap();
         Ok(())
     }
 
     pub fn delete_from_db(&self, conn: &sqlite::Connection) -> Result<(), SqliteError> {
-        // Conectarse a la base de datos y preparar la instrucción SQL para insertar un usuario
-        //let conn = sqlite::open(":memory:").unwrap();
         let mut stmt = conn.prepare("DELETE FROM usuarios WHERE id = ?").unwrap();
-        stmt.bind((1, self._id.to_string().as_str())).unwrap();
+        stmt.bind((1, self.id.to_string().as_str())).unwrap();
         stmt.next().unwrap();
         Ok(())
     }
 
     pub fn update_db(&self, conn: &sqlite::Connection) -> Result<(), SqliteError> {
-        // Conectarse a la base de datos y preparar la instrucción SQL para insertar un usuario
-        //let conn = sqlite::open(":memory:").unwrap();
         let mut stmt = conn.prepare("UPDATE usuarios SET apellidos = ?, nombre = ?, sexo = ?, nacionalidad = ?, f_nacimiento = ? WHERE id = ?").unwrap();
-        stmt.bind((1, self._apellidos.as_str())).unwrap();
-        stmt.bind((2, self._nombre.as_str())).unwrap();
-        stmt.bind((3, self._sexo.as_str())).unwrap();
-        stmt.bind((4, self._nacionalidad.as_str())).unwrap();
-        stmt.bind((5, self._nacimiento.as_str())).unwrap();
-        stmt.bind((6, self._id.to_string().as_str())).unwrap();
+        stmt.bind((1, self.apellidos.as_str())).unwrap();
+        stmt.bind((2, self.nombre.as_str())).unwrap();
+        stmt.bind((3, self.sexo.as_str())).unwrap();
+        stmt.bind((4, self.nacionalidad.as_str())).unwrap();
+        stmt.bind((5, self.nacimiento.as_str())).unwrap();
+        stmt.bind((6, self.id.to_string().as_str())).unwrap();
         stmt.next().unwrap();
         Ok(())
     }
@@ -351,74 +317,108 @@ pub fn create_table(conn: &sqlite::Connection) {
             nacionalidad VARCHAR NOT NULL,
             f_nacimiento DATE NOT NULL)",
     )
-        .unwrap();
+    .unwrap();
 }
 
-pub fn select_user(conn: &sqlite::Connection) -> Vec<Usuario>{
-    // Create the table
-    let mut table = Table::new();
-    table.add_row(row![
-        "ID",
-        "Apellidos",
-        "Nombre",
-        "Sexo",
-        "Nacionalidad",
-        "Fecha nacimiento"
-    ]);
-
+pub fn select_user(conn: &sqlite::Connection) -> Vec<Usuario> {
     let select = "SELECT * FROM usuarios";
     let mut statement = conn.prepare(select).unwrap();
-    // println!("Usuarios encontrados:");
     let mut contador = 0;
     let mut vector_usuario = Vec::new();
     while let Ok(State::Row) = statement.next() {
-        /*println!("* Usuario con id = {}", statement.read::<i64, _>("id").unwrap());
-        println!("- nombre = {}", statement.read::<String, _>("nombre").unwrap());
-        println!("- apellidos = {}", statement.read::<String,_>("apellidos").unwrap());
-        println!("- sexo = {}", statement.read::<String, _>("sexo").unwrap());
-        println!("- nacionalidad = {}", statement.read::<String, _>("nacionalidad").unwrap());
-        println!("- nacimiento = {}", statement.read::<String, _>("f_nacimiento").unwrap());*/
-        table.add_row(row![
-            statement.read::<i64, _>("id").unwrap(),
-            statement.read::<String, _>("apellidos").unwrap(),
-            statement.read::<String, _>("nombre").unwrap(),
-            statement.read::<String, _>("sexo").unwrap(),
-            statement.read::<String, _>("nacionalidad").unwrap(),
-            statement.read::<String, _>("f_nacimiento").unwrap()
-        ]);
-
-        let user = Usuario{
-            _id: statement.read::<i64, _>("id").unwrap() as i32,
-            _apellidos: statement.read::<String, _>("apellidos").unwrap(),
-            _nombre: statement.read::<String, _>("nombre").unwrap(),
-            _sexo: statement.read::<String, _>("sexo").unwrap(),
-            _nacionalidad: statement.read::<String, _>("nacionalidad").unwrap(),
-            _nacimiento: statement.read::<String, _>("f_nacimiento").unwrap(),
+        let user = Usuario {
+            id: statement.read::<i64, _>("id").unwrap() as i32,
+            apellidos: statement.read::<String, _>("apellidos").unwrap(),
+            nombre: statement.read::<String, _>("nombre").unwrap(),
+            sexo: statement.read::<String, _>("sexo").unwrap(),
+            nacionalidad: statement.read::<String, _>("nacionalidad").unwrap(),
+            nacimiento: statement.read::<String, _>("f_nacimiento").unwrap(),
         };
-
         vector_usuario.push(user);
-
         contador = contador + 1;
     }
-    // table.printstd();
-
-    // if contador == 1 {
-    //     println!("Se ha encontrado sólo {} usuario", contador);
-    // } else {
-    //     println!("Se han encontrado {} usuarios", contador);
-    // }
     vector_usuario
 }
 
 pub fn count_id(conn: &sqlite::Connection) -> i32 {
     let select = "SELECT * FROM usuarios";
     let mut statement = conn.prepare(select).unwrap();
-    let mut _id_max:i64 = 0;
+    // let mut _id_max: i64 = 0;
     let mut contador = 0;
     while let Ok(State::Row) = statement.next() {
-        _id_max = statement.read::<i64, _>("id").unwrap();
+        // _id_max = statement.read::<i64, _>("id").unwrap();
         contador += 1
     }
     // _id_max as i32
     contador
+}
+
+pub fn validation(nombre: &str, apellidos: &str, nacionalidad: &str, fecha: &str) -> bool {
+    if nombre.is_empty() || apellidos.is_empty() || nacionalidad.is_empty() || fecha.is_empty() {
+        let message = format!("Algunos campos están vacíos");
+        MessageDialog::new()
+            .set_type(MessageType::Error)
+            .set_title("Error")
+            .set_text(&*message)
+            .show_alert()
+            .unwrap();
+        return false;
+    } else if nacionalidad.len() != 3 {
+        let message = format!("Nacionalidad tiene que tener 3 caracteres");
+        MessageDialog::new()
+            .set_type(MessageType::Error)
+            .set_title("Error")
+            .set_text(&*message)
+            .show_alert()
+            .unwrap();
+        return false;
+    } else if !fecha.contains("-") {
+        let message = format!("Nacimiento tiene que tener el formato dd-mm-yyyy");
+        MessageDialog::new()
+            .set_type(MessageType::Error)
+            .set_title("Error")
+            .set_text(&*message)
+            .show_alert()
+            .unwrap();
+        return false;
+    }
+    return true;
+}
+
+pub fn crear_usuario(
+    id: i32,
+    apellidos: String,
+    nombre: String,
+    genero: String,
+    nacionalidad: String,
+    fecha: String,
+) -> Usuario {
+    let usuario = Usuario {
+        id: id.to_owned(),
+        apellidos: apellidos.to_owned(),
+        nombre: nombre.to_owned(),
+        sexo: genero.to_owned(),
+        nacionalidad: nacionalidad.to_owned(),
+        nacimiento: fecha.to_owned(),
+    };
+    usuario
+}
+
+pub fn actualizar_tabla(
+    mut vector: Vec<[String; 6]>,
+    conexion: &sqlite::Connection,
+) -> Vec<[String; 6]> {
+    let vector_usuario = select_user(conexion);
+    vector.clear();
+    for usuario in vector_usuario {
+        vector.push([
+            usuario.id.to_string(),
+            usuario.apellidos,
+            usuario.nombre,
+            usuario.sexo,
+            usuario.nacionalidad,
+            usuario.nacimiento,
+        ]);
+    }
+    vector
 }
