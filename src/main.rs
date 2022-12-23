@@ -1,7 +1,7 @@
 use eframe::run_native;
 use eframe::{
     egui::{CentralPanel, Direction, Layout},
-    App, NativeOptions,
+    App, NativeOptions, Theme,
 };
 use egui::{SidePanel, Vec2};
 use egui_extras::{Column, TableBuilder};
@@ -34,6 +34,7 @@ struct Test {
     is_table_created: bool,
     id: i32,
     contador: i32,
+    int_option: usize,
 }
 
 impl Default for Test {
@@ -50,12 +51,13 @@ impl Default for Test {
             is_table_created: false,
             id: 1,
             contador: 0,
+            int_option: 0,
         }
     }
 }
 
 impl App for Test {
-    fn update(&mut self, ctx: &eframe::egui::Context, frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         if self.is_table_created.eq(&false) {
             create_table(&self.connection);
             self.is_table_created = true;
@@ -63,11 +65,6 @@ impl App for Test {
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
-                ui.menu_button("Menú", |ui| {
-                    if ui.button("Cerrar").clicked() {
-                        frame.close();
-                    }
-                });
                 ui.menu_button("Tema", |ui| {
                     egui::widgets::global_dark_light_mode_buttons(ui);
                 });
@@ -116,9 +113,15 @@ impl App for Test {
                         _usuario.insert_into_db(&self.connection).unwrap();
                         self.contador = count_id(&self.connection);
                         self.vector = actualizar_tabla(self.vector.clone(), &self.connection);
+                        self.int_option += 1;
+                        let alternatives = list_id(&self.connection);
+                        match alternatives.get(alternatives.len()-1) {
+                            Some(updated_index) => self.id = *updated_index as i32,
+                            None => (),
+                        }
                     }
                     ui.label("");
-                    if ui.button("Modificar").clicked()
+                    if ui.button("Modificar").clicked()&&self.id!=0
                         && validation(
                             &self.nombre,
                             &self.apellidos,
@@ -150,7 +153,7 @@ impl App for Test {
                         }
                     }
                     ui.label("");
-                    if ui.button("Borrar").clicked() {
+                    if ui.button("Borrar").clicked()&&self.id!=0 {
                         let text = "¿Quiéres borrar el usuario con id ".to_owned()
                             + &self.id.to_string()
                             + "?";
@@ -169,8 +172,23 @@ impl App for Test {
                                 self.nacionalidad.clone(),
                                 self.fecha.clone(),
                             );
+                            let alternatives = list_id(&self.connection);
+                            let index = alternatives
+                                .iter()
+                                .position(|&r| r == self.id as i64)
+                                .unwrap();
                             _usuario.delete_from_db(&self.connection).unwrap();
-                            self.id -= 1;
+                            if index!=0{
+                                match alternatives.get(index - 1) {
+                                    Some(updated_index) => self.id = *updated_index as i32,
+                                    None => (),
+                                }
+                            }else{
+                                match alternatives.get(index + 1) {
+                                    Some(updated_index) => self.id = *updated_index as i32,
+                                    None => self.id=0,
+                                }
+                            }
                             self.contador = count_id(&self.connection);
                             self.vector = actualizar_tabla(self.vector.clone(), &self.connection);
                         }
@@ -185,8 +203,19 @@ impl App for Test {
                     }
                 });
                 if self.contador != 0 {
-                    ui.label("Seleccione el ID (Modificar/Borrar):");
-                    ui.add(egui::Slider::new(&mut self.id, 1..=self.contador).text(""));
+                    let alternatives = list_id(&self.connection);
+                    ui.label(format!("ID seleccionada: {}", self.id));
+                    egui::ComboBox::from_id_source(1)
+                        .selected_text(self.id.to_string())
+                        .show_ui(ui, |ui| {
+                            for option in alternatives {
+                                ui.selectable_value(
+                                    &mut self.id,
+                                    option as i32,
+                                    (option as i32).to_string(),
+                                );
+                            }
+                        });
                 }
             });
 
@@ -250,6 +279,7 @@ fn main() {
         initial_window_size: Some(Vec2::new(1170., 535.)),
         min_window_size: Some(Vec2::new(1170., 535.)),
         resizable: false,
+        default_theme: Theme::Light,
         ..Default::default()
     };
     run_native("Cyberdyne", options, Box::new(|_| Box::<Test>::default()));
@@ -343,6 +373,16 @@ pub fn count_id(conn: &sqlite::Connection) -> i32 {
     }
     // _id_max as i32
     contador
+}
+
+pub fn list_id(conn: &sqlite::Connection) -> Vec<i64> {
+    let select = "SELECT * FROM usuarios";
+    let mut statement = conn.prepare(select).unwrap();
+    let mut vector_id = Vec::new();
+    while let Ok(State::Row) = statement.next() {
+        vector_id.push(statement.read::<i64, _>("id").unwrap());
+    }
+    vector_id
 }
 
 pub fn validation(nombre: &str, apellidos: &str, nacionalidad: &str, fecha: &str) -> bool {
