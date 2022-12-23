@@ -115,10 +115,7 @@ impl App for Test {
                         self.vector = actualizar_tabla(self.vector.clone(), &self.connection);
                         self.int_option += 1;
                         let alternatives = list_id(&self.connection);
-                        match alternatives.get(alternatives.len()-1) {
-                            Some(updated_index) => self.id = *updated_index as i32,
-                            None => (),
-                        }
+                        if let Some(updated_index) = alternatives.last() { self.id = *updated_index as i32 }
                     }
                     ui.label("");
                     if ui.button("Modificar").clicked()&&self.id!=0
@@ -179,10 +176,7 @@ impl App for Test {
                                 .unwrap();
                             _usuario.delete_from_db(&self.connection).unwrap();
                             if index!=0{
-                                match alternatives.get(index - 1) {
-                                    Some(updated_index) => self.id = *updated_index as i32,
-                                    None => (),
-                                }
+                                if let Some(updated_index) = alternatives.get(index - 1) { self.id = *updated_index as i32 }
                             }else{
                                 match alternatives.get(index + 1) {
                                     Some(updated_index) => self.id = *updated_index as i32,
