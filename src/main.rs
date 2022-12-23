@@ -85,7 +85,7 @@ impl App for Test {
                 ui.label("Nombre:");
                 ui.text_edit_singleline(&mut self.nombre);
                 ui.label("Sexo:");
-                egui::ComboBox::from_label(format!(""))
+                egui::ComboBox::from_label(String::new())
                     .selected_text(self.genero.to_string())
                     .show_ui(ui, |ui| {
                         for genero in [Genero::Masculino, Genero::Femenino, Genero::Otro] {
@@ -97,57 +97,56 @@ impl App for Test {
                 ui.label("Fecha nacimiento:");
                 ui.text_edit_singleline(&mut self.fecha);
                 ui.horizontal(|ui| {
-                    if ui.button("Alta").clicked() {
-                        if validation(
+                    if ui.button("Alta").clicked()
+                        && validation(
                             &self.nombre,
                             &self.apellidos,
                             &self.nacionalidad,
                             &self.fecha,
-                        ) {
+                        )
+                    {
+                        let _usuario = crear_usuario(
+                            self.id,
+                            self.apellidos.clone(),
+                            self.nombre.clone(),
+                            self.genero.to_string(),
+                            self.nacionalidad.clone(),
+                            self.fecha.clone(),
+                        );
+                        _usuario.insert_into_db(&self.connection).unwrap();
+                        self.contador = count_id(&self.connection);
+                        self.vector = actualizar_tabla(self.vector.clone(), &self.connection);
+                    }
+                    ui.label("");
+                    if ui.button("Modificar").clicked()
+                        && validation(
+                            &self.nombre,
+                            &self.apellidos,
+                            &self.nacionalidad,
+                            &self.fecha,
+                        )
+                    {
+                        let text = "¿Quiéres modificar el usuario con id ".to_owned()
+                            + &self.id.to_string()
+                            + "?";
+                        let yes = MessageDialog::new()
+                            .set_type(MessageType::Info)
+                            .set_title("Modificar usuario")
+                            .set_text(&text)
+                            .show_confirm()
+                            .unwrap();
+                        if yes {
                             let _usuario = crear_usuario(
                                 self.id,
                                 self.apellidos.clone(),
                                 self.nombre.clone(),
-                                self.genero.to_string().clone(),
+                                self.genero.to_string(),
                                 self.nacionalidad.clone(),
                                 self.fecha.clone(),
                             );
-                            _usuario.insert_into_db(&self.connection).unwrap();
+                            _usuario.update_db(&self.connection).unwrap();
                             self.contador = count_id(&self.connection);
                             self.vector = actualizar_tabla(self.vector.clone(), &self.connection);
-                        }
-                    }
-                    ui.label("");
-                    if ui.button("Modificar").clicked() {
-                        if validation(
-                            &self.nombre,
-                            &self.apellidos,
-                            &self.nacionalidad,
-                            &self.fecha,
-                        ) {
-                            let text = "¿Quiéres modificar el usuario con id ".to_owned()
-                                + &self.id.to_string()
-                                + "?";
-                            let yes = MessageDialog::new()
-                                .set_type(MessageType::Info)
-                                .set_title("Modificar usuario")
-                                .set_text(&text)
-                                .show_confirm()
-                                .unwrap();
-                            if yes {
-                                let _usuario = crear_usuario(
-                                    self.id,
-                                    self.apellidos.clone(),
-                                    self.nombre.clone(),
-                                    self.genero.to_string().clone(),
-                                    self.nacionalidad.clone(),
-                                    self.fecha.clone(),
-                                );
-                                _usuario.update_db(&self.connection).unwrap();
-                                self.contador = count_id(&self.connection);
-                                self.vector =
-                                    actualizar_tabla(self.vector.clone(), &self.connection);
-                            }
                         }
                     }
                     ui.label("");
@@ -166,7 +165,7 @@ impl App for Test {
                                 self.id,
                                 self.apellidos.clone(),
                                 self.nombre.clone(),
-                                self.genero.to_string().clone(),
+                                self.genero.to_string(),
                                 self.nacionalidad.clone(),
                                 self.fecha.clone(),
                             );
@@ -253,11 +252,7 @@ fn main() {
         resizable: false,
         ..Default::default()
     };
-    run_native(
-        "Cyberdyne",
-        options,
-        Box::new(|_| Box::new(Test::default())),
-    );
+    run_native("Cyberdyne", options, Box::new(|_| Box::<Test>::default()));
 }
 
 #[derive(Debug)]
@@ -303,8 +298,7 @@ impl Usuario {
 }
 
 pub fn get_connection() -> sqlite::Connection {
-    let connection = sqlite::open(":memory:").unwrap();
-    connection
+    sqlite::open(":memory:").unwrap()
 }
 
 pub fn create_table(conn: &sqlite::Connection) {
@@ -323,7 +317,6 @@ pub fn create_table(conn: &sqlite::Connection) {
 pub fn select_user(conn: &sqlite::Connection) -> Vec<Usuario> {
     let select = "SELECT * FROM usuarios";
     let mut statement = conn.prepare(select).unwrap();
-    let mut contador = 0;
     let mut vector_usuario = Vec::new();
     while let Ok(State::Row) = statement.next() {
         let user = Usuario {
@@ -335,7 +328,6 @@ pub fn select_user(conn: &sqlite::Connection) -> Vec<Usuario> {
             nacimiento: statement.read::<String, _>("f_nacimiento").unwrap(),
         };
         vector_usuario.push(user);
-        contador = contador + 1;
     }
     vector_usuario
 }
@@ -355,34 +347,34 @@ pub fn count_id(conn: &sqlite::Connection) -> i32 {
 
 pub fn validation(nombre: &str, apellidos: &str, nacionalidad: &str, fecha: &str) -> bool {
     if nombre.is_empty() || apellidos.is_empty() || nacionalidad.is_empty() || fecha.is_empty() {
-        let message = format!("Algunos campos están vacíos");
+        let message = "Algunos campos están vacíos".to_string();
         MessageDialog::new()
             .set_type(MessageType::Error)
             .set_title("Error")
-            .set_text(&*message)
+            .set_text(&message)
             .show_alert()
             .unwrap();
         return false;
     } else if nacionalidad.len() != 3 {
-        let message = format!("Nacionalidad tiene que tener 3 caracteres");
+        let message = "Nacionalidad tiene que tener 3 caracteres".to_string();
         MessageDialog::new()
             .set_type(MessageType::Error)
             .set_title("Error")
-            .set_text(&*message)
+            .set_text(&message)
             .show_alert()
             .unwrap();
         return false;
-    } else if !fecha.contains("-") {
-        let message = format!("Nacimiento tiene que tener el formato dd-mm-yyyy");
+    } else if !fecha.contains('-') {
+        let message = "Nacimiento tiene que tener el formato dd-mm-yyyy".to_string();
         MessageDialog::new()
             .set_type(MessageType::Error)
             .set_title("Error")
-            .set_text(&*message)
+            .set_text(&message)
             .show_alert()
             .unwrap();
         return false;
     }
-    return true;
+    true
 }
 
 pub fn crear_usuario(
@@ -393,15 +385,14 @@ pub fn crear_usuario(
     nacionalidad: String,
     fecha: String,
 ) -> Usuario {
-    let usuario = Usuario {
+    Usuario {
         id: id.to_owned(),
-        apellidos: apellidos.to_owned(),
-        nombre: nombre.to_owned(),
-        sexo: genero.to_owned(),
-        nacionalidad: nacionalidad.to_owned(),
-        nacimiento: fecha.to_owned(),
-    };
-    usuario
+        apellidos,
+        nombre,
+        sexo: genero,
+        nacionalidad,
+        nacimiento: fecha,
+    }
 }
 
 pub fn actualizar_tabla(
