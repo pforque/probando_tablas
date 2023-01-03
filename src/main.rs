@@ -35,6 +35,7 @@ struct Test {
     id: i32,
     contador: i32,
     int_option: usize,
+    nacionalidad_filtrada: String,
 }
 
 impl Default for Test {
@@ -52,6 +53,7 @@ impl Default for Test {
             id: 1,
             contador: 0,
             int_option: 0,
+            nacionalidad_filtrada: "".to_string(),
         }
     }
 }
@@ -188,12 +190,9 @@ impl App for Test {
                         }
                     }
                     ui.label("");
-                    if ui.button("Limpiar").clicked() {
-                        self.nombre = "".to_string();
-                        self.apellidos = "".to_string();
-                        self.genero = Genero::Masculino;
-                        self.nacionalidad = "".to_string();
-                        self.fecha = "".to_string();
+                    if ui.button("Filtrar").clicked() {
+                        self.contador = list_nacionalidad(&self.connection, self.nacionalidad_filtrada.clone());
+                        self.vector = actualizar_tabla_nacionalidad(self.vector.clone(), &self.connection, self.nacionalidad_filtrada.clone());
                     }
                 });
                 if self.contador != 0 {
@@ -210,6 +209,20 @@ impl App for Test {
                                 );
                             }
                         });
+                    let alternatives = filtrar_nacionalidad(&self.connection);
+                    ui.label(format!("Nacionalidad filtrada: {}", self.nacionalidad_filtrada));
+                    egui::ComboBox::from_id_source(2)
+                        .selected_text(self.nacionalidad_filtrada.to_string())
+                        .show_ui(ui, |ui| {
+                            for nacionalidad in alternatives {
+                                ui.selectable_value(&mut self.nacionalidad_filtrada, nacionalidad.clone(), nacionalidad.clone().to_string());
+                            }
+                        });
+                    ui.label("");ui.label("");ui.label("");ui.label("");ui.label("");ui.label("");ui.label("");ui.label("");ui.label("");ui.label("");ui.label("");
+                    if ui.button("Quitar filtro nacionalidad").clicked() {
+                        self.contador = count_id(&self.connection);
+                        self.vector = actualizar_tabla(self.vector.clone(), &self.connection);
+                    }
                 }
             });
 
@@ -379,6 +392,18 @@ pub fn list_id(conn: &sqlite::Connection) -> Vec<i64> {
     vector_id
 }
 
+pub fn filtrar_nacionalidad(conn: &sqlite::Connection) -> Vec<String> {
+    let select = "SELECT * FROM usuarios";
+    let mut statement = conn.prepare(select).unwrap();
+    let mut vector = Vec::new();
+    while let Ok(State::Row) = statement.next() {
+        if !vector.contains(&statement.read::<String, _>("nacionalidad").unwrap()){
+            vector.push(statement.read::<String, _>("nacionalidad").unwrap());
+        }
+    }
+    vector
+}
+
 pub fn validation(nombre: &str, apellidos: &str, nacionalidad: &str, fecha: &str) -> bool {
     if nombre.is_empty() || apellidos.is_empty() || nacionalidad.is_empty() || fecha.is_empty() {
         let message = "Algunos campos están vacíos".to_string();
@@ -446,4 +471,59 @@ pub fn actualizar_tabla(
         ]);
     }
     vector
+}
+
+pub fn actualizar_tabla_nacionalidad(
+    mut vector: Vec<[String; 6]>,
+    conexion: &sqlite::Connection,
+    nacionalidad: String,
+) -> Vec<[String; 6]> {
+    let vector_usuario = select_nacionalidad(conexion,nacionalidad.clone());
+    vector.clear();
+    for usuario in vector_usuario {
+        vector.push([
+            usuario.id.to_string(),
+            usuario.apellidos,
+            usuario.nombre,
+            usuario.sexo,
+            usuario.nacionalidad,
+            usuario.nacimiento,
+        ]);
+    }
+    vector
+}
+
+pub fn select_nacionalidad(conn: &sqlite::Connection, nacionalidad: String) -> Vec<Usuario> {
+    let mut select = String::from("SELECT * FROM usuarios WHERE nacionalidad = '");
+    select.push_str(&nacionalidad.to_string());
+    select.push_str("'");
+    let mut statement = conn.prepare(select).unwrap();
+    let mut vector_usuario = Vec::new();
+    while let Ok(State::Row) = statement.next() {
+        let user = Usuario {
+            id: statement.read::<i64, _>("id").unwrap() as i32,
+            apellidos: statement.read::<String, _>("apellidos").unwrap(),
+            nombre: statement.read::<String, _>("nombre").unwrap(),
+            sexo: statement.read::<String, _>("sexo").unwrap(),
+            nacionalidad: statement.read::<String, _>("nacionalidad").unwrap(),
+            nacimiento: statement.read::<String, _>("f_nacimiento").unwrap(),
+        };
+        vector_usuario.push(user);
+    }
+    vector_usuario
+}
+
+pub fn list_nacionalidad(conn: &sqlite::Connection, nacionalidad: String) -> i32 {
+    let mut select = String::from("SELECT * FROM usuarios WHERE nacionalidad = '");
+    select.push_str(&nacionalidad.to_string());
+    select.push_str("'");
+    let mut statement = conn.prepare(select).unwrap();
+    // let mut _id_max: i64 = 0;
+    let mut contador = 0;
+    while let Ok(State::Row) = statement.next() {
+        // _id_max = statement.read::<i64, _>("id").unwrap();
+        contador += 1
+    }
+    // _id_max as i32
+    contador
 }
